@@ -5,6 +5,12 @@ from typing import Optional, Tuple
 import cv2
 
 
+FIXED_X = 10
+FIXED_Y = 272
+FIXED_WIDTH = 1909
+FIXED_HEIGHT = 651
+
+
 def select_roi_from_video(video_path: str) -> Optional[Tuple[int, int, int, int]]:
     """Show the first frame and let the user draw a rectangle.
 
@@ -74,6 +80,12 @@ def crop_video(
             )
             return 1
 
+        # Ensure even dimensions for video encoders
+        if width % 2 != 0:
+            width -= 1
+        if height % 2 != 0:
+            height -= 1
+
         # Derive default output path
         if output_path is None or output_path == "":
             base, _ = os.path.splitext(input_path)
@@ -93,11 +105,16 @@ def crop_video(
         if parent_dir and not os.path.exists(parent_dir):
             os.makedirs(parent_dir, exist_ok=True)
 
+        # Prefer XVID for wide Win compatibility if requested codec fails later
         fourcc = cv2.VideoWriter_fourcc(*codec)
         writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         if not writer.isOpened():
-            print(f"Error: Failed to open output video for writing: {output_path}", file=sys.stderr)
-            return 1
+            # Retry with XVID as fallback
+            fallback = cv2.VideoWriter_fourcc(*"XVID")
+            writer = cv2.VideoWriter(output_path, fallback, fps, (width, height))
+            if not writer.isOpened():
+                print(f"Error: Failed to open output video for writing: {output_path}", file=sys.stderr)
+                return 1
 
         while True:
             ok, frame = cap.read()
@@ -114,4 +131,20 @@ def crop_video(
 
     return 0
 
+
+def crop_video_fixed(
+    input_path: str,
+    output_path: Optional[str] = None,
+    codec: str = "mp4v",
+) -> int:
+    """Crop using fixed rectangle x=7, y=184, w=1905, h=603."""
+    return crop_video(
+        input_path=input_path,
+        x=FIXED_X,
+        y=FIXED_Y,
+        width=FIXED_WIDTH,
+        height=FIXED_HEIGHT,
+        output_path=output_path,
+        codec=codec,
+    )
 
