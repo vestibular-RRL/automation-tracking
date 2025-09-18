@@ -41,7 +41,6 @@ def process_video_pipeline(video_path: str, model_path: str, output_dir: str = "
     except Exception as e:
         raise RuntimeError(f"Cropping failed for {video_path}: {e}")
 
-    # Step 2/3: Split + track (CSV only, no video outputs)
     print(f"[pipeline] Loading model: {model_path}")
     model = YOLO(model_path)
 
@@ -56,7 +55,6 @@ def process_video_pipeline(video_path: str, model_path: str, output_dir: str = "
         except Exception as e:
             print(f"[pipeline] Warning: failed reading annotation CSV '{annotation_csv_path}': {e}")
 
-    # --- Only process cropped frames ---
     results_list = process_video_csv_only_frames(
         cropped_frames=cropped_frames,
         model=model,
@@ -66,7 +64,7 @@ def process_video_pipeline(video_path: str, model_path: str, output_dir: str = "
 
     left_csv_path = os.path.join(output_dir, f"{base_name}_left.csv")
     right_csv_path = os.path.join(output_dir, f"{base_name}_right.csv")
-    combined_video_path = os.path.join(output_dir, f"{base_name}_combined_traced.mp4")
+    # combined_video_path = os.path.join(output_dir, f"{base_name}_combined_traced.mp4")  # REMOVE
 
     try:
         if results_list is not None:
@@ -84,20 +82,20 @@ def process_video_pipeline(video_path: str, model_path: str, output_dir: str = "
     except Exception as e:
         print(f"[pipeline] Warning: failed writing CSV files: {e}")
 
-    # Save combined traced video (rewind generator)
-    cropped_frames_for_video = crop_video_fixed_in_memory(video_path)
-    save_combined_traced_video(
-        cropped_frames=cropped_frames_for_video,
-        model=model,
-        device=device,
-        output_path=combined_video_path,
-    )
+    # --- REMOVE video saving ---
+    # cropped_frames_for_video = crop_video_fixed_in_memory(video_path)
+    # save_combined_traced_video(
+    #     cropped_frames=cropped_frames_for_video,
+    #     model=model,
+    #     device=device,
+    #     output_path=combined_video_path,
+    # )
 
-    # Only return the three required outputs
+    # Only return the two required outputs
     return {
         "left_csv": left_csv_path,
         "right_csv": right_csv_path,
-        "combined_traced_video": combined_video_path,
+        # "combined_traced_video": combined_video_path,  # REMOVE
     }
 
 
