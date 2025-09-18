@@ -12,6 +12,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 	parser.add_argument("--model", required=True, help="Path to YOLO model (e.g., model\\best copy.pt)")
 	parser.add_argument("--out", default=".", help="Output directory (default: current working dir)")
 	parser.add_argument("--csv", help="Path to annotation CSV file with Frame# and Annotation columns")
+	parser.add_argument("--test", action="store_true", help="Process only the first video and print outputs")
 	return parser.parse_args(argv)
 
 def main(argv: list[str]) -> int:
@@ -22,28 +23,41 @@ def main(argv: list[str]) -> int:
 
 	os.makedirs(args.out, exist_ok=True)
 
-	mp4s = [n for n in sorted(os.listdir(args.folder)) if n.lower().endswith('.mp4')]
+	mp4s = [
+		n for n in sorted(os.listdir(args.folder))
+		if n.lower().endswith('.mp4')
+		and '_cropped' not in n
+		and '_combined_traced' not in n
+		and '_left' not in n
+		and '_right' not in n
+	]
 	if not mp4s:
 		print("No .mp4 files found in the provided folder.")
 		return 0
 
 	processed = 0
-	for name in mp4s:
+	for idx, name in enumerate(mp4s):
 		in_path = os.path.join(args.folder, name)
 		# Auto-detect CSV in same directory with same base name
 		base_name = os.path.splitext(name)[0]
 		csv_path = os.path.join(args.folder, base_name + ".csv")
 		annotation_csv = csv_path if os.path.exists(csv_path) else args.csv
 		try:
-			results = process_video_pipeline(in_path, args.model, output_dir=args.out, annotation_csv_path=annotation_csv)
+			# Only get left/right CSVs from the result
+			results = process_video_pipeline(
+				in_path, args.model, output_dir=args.out, annotation_csv_path=annotation_csv
+			)
 			print(f"[✓] Done: {name}")
-			for k, v in results.items():
-				print(f" - {k}: {v}")
+			print(f" - left_csv: {results['left_csv']}")	
+			print(f" - right_csv: {results['right_csv']}")
+			print(f" - combined_traced_video: {results['combined_traced_video']}")
 			processed += 1
+			if args.test:
+				print("[test mode] Only processed the first video.")
+				break
 		except Exception as e:
 			print(f"[x] Failed: {name} -> {e}", file=sys.stderr)
 
-	return 0
 	return 0
 
 if __name__ == "__main__":
