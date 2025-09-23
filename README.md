@@ -2,7 +2,7 @@
 
 ## program workflow
 
-![](media/diagram(1).png)
+![](media/diagram(2).png)
 
 ## How to run the video processing program (main.py)
 
