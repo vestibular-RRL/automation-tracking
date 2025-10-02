@@ -1,12 +1,45 @@
 # automation-tracking
 
-## program workflow
+## How to Run
 
-![alt text](media\diagram(1).png)
+1. **Prepare your environment**  
+   Make sure you have installed all required dependencies (see Requirements section).
 
-## How to run the video processing program (main.py)
+2. **Prepare your data**  
+   - Place your `.mp4` videos in one or more folders.
+   - (Optional) Prepare annotation CSV files with the same base name as the videos.
 
-A step-by-step template to get the `main.py` CLI running. Paste this into a `README.md` or `RUN_INSTRUCTIONS.md` in your project and adapt paths as needed.
+3. **Run for a single folder**  
+   ```sh
+   python main.py <folder_with_mp4s> --model <path_to_yolo_model> --out <output_folder>
+   ```
+   Example:
+   ```sh
+   python main.py "H:\videos\fall-annotation\ID62_RDH_POSITIVE_T1_2" --model "model\segment.pt" --out "H:\videos\csv_dataset"
+   ```
+
+4. **Run for multiple folders using a text file**  
+   - Create a text file (e.g., `folder.txt`) with one folder path per line.
+   - Run:
+   ```sh
+   python main.py --folders folder.txt --model <path_to_yolo_model> --out <output_folder>
+   ```
+   Example:
+   ```sh
+   python main.py --folders folder.txt --model "model\segment.pt" --out "H:\videos\csv_dataset"
+   ```
+
+5. **Test mode (process only the first video in each folder)**  
+   Add `--test` to your command:
+   ```sh
+   python main.py --folders folder.txt --model "model\segment.pt" --out "H:\videos\csv_dataset" --test
+   ```
+
+6. **Outputs**  
+   For each video, you will get:
+   - `<video_basename>_left.csv`
+   - `<video_basename>_right.csv`
+   in your output directory.
 
 ---
 
