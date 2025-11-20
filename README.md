@@ -2,7 +2,7 @@
 
 ## program workflow
 
-![alt text](media\diagram(1).png)
+![alt text](media\diagram(2).png)
 
 ## How to run the video processing program (main.py)
 
@@ -107,46 +107,77 @@ ultralytics   # or yolov5 / your YOLO dependency
 ## 5. How to run `main.py`
 
 Run from the project root (so `process_video` imports from the same folder work):
+Important: `--model` is required. You must provide either the positional `folder` argument or `--folders`.
 
-### Batch mode (multiple folders listed in a file)
-
-Create `folders.txt` with one folder path per line, then:
-
-#### Windows PowerShell example
+### Show help
 
 ```powershell
-python .\main.py "C:\Data\videos" --model "C:\models\best.pt" --out "C:\Data\processed"
+python .\main.py --help
 ```
 
+### Create & activate a venv (PowerShell)
+
+```powershell
+python -m venv .\venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+If script execution is blocked, run PowerShell with an execution policy bypass for the session:
+
+```powershell
+powershell -ExecutionPolicy Bypass -NoProfile -Command ". .\venv\Scripts\Activate.ps1"
+```
+
+### Common run examples (PowerShell)
+
+- Single folder (process all .mp4 in `.\media`):
+
+```powershell
+python .\main.py --model .\model\segment.pt .\media
+```
+
+- Specify an output directory and a fallback CSV:
+
+```powershell
+python .\main.py --model .\model\segment.pt --out .\output --csv .\annotations.csv .\media
+```
+
+- Batch mode using a `folders.txt` file (one folder path per line):
+
+```powershell
+python .\main.py --model .\model\segment.pt --folders .\folders.txt
+```
+
+- Quick test run (only process the first video):
+
+```powershell
+python .\main.py --model .\model\segment.pt --test .\media
+```
+
+### CLI arguments summary
+
+- `folder` (positional, optional): Folder containing `.mp4` files to process (provide this OR `--folders`).
+- `--folders`: Path to a text file with a list of folders to process (one per line).
+- `--model` (required): Path to the YOLO model file (e.g., `model\\segment.pt`).
+- `--out`: Output directory (default: current working directory `.`).
+- `--csv`: Path to an annotation CSV file with `Frame#` and `Annotation` columns — used when a same-named per-video CSV is not present.
+- `--test`: Flag; when present the script processes only the first video (useful for quick checks).
+
+### What the script prints / outputs
+
+- On success the script prints a line like: `[✓] Done: <filename>`
+- After each processed video it prints the returned CSV paths, e.g. `- left_csv: <path>` and `- right_csv: <path>`.
+- `--out` sets where generated files are written (default `.`).
+
+The `process_video_pipeline` function should return a dictionary containing at least `left_csv` and `right_csv` entries — the script prints those values.
+
 ---
 
-## 6. What the script prints / outputs
+### Minimal dependency install (if you don't have `requirements.txt`)
 
-* The script prints a success line for each processed video: `[✓] Done: <filename>`
-* After each processed video it prints the returned CSV paths, for example:
+```powershell
+pip install torch numpy pandas opencv-python tqdm ultralytics
+```
 
-  * `- left_csv: /path/to/output/video_left.csv`
-  * `- right_csv: /path/to/output/video_right.csv`
-* `--out` sets the directory where generated files are stored (default = current working directory `.`)
-
-The `process_video_pipeline` function is expected to return a dictionary like `{'left_csv': ..., 'right_csv': ...}` — the script prints these values.
-
----
-
-
-
-### Overview
-
-This tool processes all `.mp4` videos in a folder (or multiple folders), crops each video to a fixed region of interest (ROI), splits the cropped video into left and right halves, runs YOLO tracking on each half, and saves the tracking results as CSV files.
-
-### Requirements
-
-- Python 3.8+
-- OpenCV (`cv2`)
-- pandas
-- numpy
-- torch
-- [ultralytics](https://github.com/ultralytics/ultralytics) (for YOLO)
-- Your YOLO model file (e.g., `model/segment.pt`)
-
-Install dependencies (example):
+Adjust packages to match your environment and CUDA/CPU requirements.
