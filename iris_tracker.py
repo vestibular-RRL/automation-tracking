@@ -236,9 +236,11 @@ def track_irises_from_frames(cropped_frames, model, device: str, fps: float = 30
             "left_x": int(lx) if lx != -1 else -1,
             "left_y": int(ly) if ly != -1 else -1,
             "left_velocity": float(lvel),
+            "left_size": float(lsize) if lsize != -1.0 else -1.0,
             "right_x": int(rx) if rx != -1 else -1,
             "right_y": int(ry) if ry != -1 else -1,
             "right_velocity": float(rvel),
+            "right_size": float(rsize) if rsize != -1.0 else -1.0,
         })
         frame_idx += 1
 
@@ -345,25 +347,42 @@ def process_video(video_path: str,
     if results_list:
         df_all = pd.DataFrame(results_list)
 
-        # Split into left-only and right-only DataFrames
-        left_cols = ["Frame#", "left_x", "left_y", "left_velocity"]
-        right_cols = ["Frame#", "right_x", "right_y", "right_velocity"]
-        df_left = df_all[left_cols].rename(columns={"left_x": "x", "left_y": "y", "left_velocity": "velocity"})
-        df_right = df_all[right_cols].rename(columns={"right_x": "x", "right_y": "y", "right_velocity": "velocity"})
+        # Build left/right DataFrames with columns: Frame#, annotation, x_position, y_position, seconds, ellipse_size
+        left_cols = ["Frame#", "left_x", "left_y", "left_size"]
+        right_cols = ["Frame#", "right_x", "right_y", "right_size"]
+        df_left = df_all[left_cols].copy()
+        df_right = df_all[right_cols].copy()
+        df_left["seconds"] = (df_left["Frame#"] - start_frame) / fps
+        df_right["seconds"] = (df_right["Frame#"] - start_frame) / fps
+        df_left = df_left.rename(columns={"left_x": "x_position", "left_y": "y_position", "left_size": "ellipse_size"})
+        df_right = df_right.rename(columns={"right_x": "x_position", "right_y": "y_position", "right_size": "ellipse_size"})
+        # Column order: Frame#, annotation, x_position, y_position, seconds, ellipse_size
+        df_left = df_left.reindex(columns=["Frame#", "x_position", "y_position", "seconds", "ellipse_size"])
+        df_right = df_right.reindex(columns=["Frame#", "x_position", "y_position", "seconds", "ellipse_size"])
 
         # Merge with annotations so every row has an annotation label (tracking rows preserved)
         if annotations_df is not None and "Frame#" in annotations_df.columns:
             ann_cols = ["Frame#"]
+            label_col = None
             if "Annotation" in annotations_df.columns:
-                ann_cols.append("Annotation")
-            # Keep all tracking rows; attach annotation per frame (left merge from tracking)
-            df_left = pd.merge(df_left, annotations_df[ann_cols], on="Frame#", how="left")
-            df_right = pd.merge(df_right, annotations_df[ann_cols], on="Frame#", how="left")
-        # Ensure Annotation column exists in every output (empty when no annotations)
-        if "Annotation" not in df_left.columns:
-            df_left.insert(1, "Annotation", "")
-        if "Annotation" not in df_right.columns:
-            df_right.insert(1, "Annotation", "")
+                label_col = "Annotation"
+            elif "Label" in annotations_df.columns:
+                label_col = "Label"
+            if label_col:
+                ann_cols.append(label_col)
+            ann_df = annotations_df[ann_cols].rename(columns={label_col: "annotation"}) if label_col else annotations_df[["Frame#"]].copy()
+            if label_col:
+                df_left = pd.merge(df_left, ann_df, on="Frame#", how="left")
+                df_right = pd.merge(df_right, ann_df, on="Frame#", how="left")
+            else:
+                df_left["annotation"] = ""
+                df_right["annotation"] = ""
+        else:
+            df_left["annotation"] = ""
+            df_right["annotation"] = ""
+        # Ensure annotation is second column
+        df_left = df_left.reindex(columns=["Frame#", "annotation", "x_position", "y_position", "seconds", "ellipse_size"])
+        df_right = df_right.reindex(columns=["Frame#", "annotation", "x_position", "y_position", "seconds", "ellipse_size"])
 
         df_left.to_csv(left_csv_path, index=False)
         df_right.to_csv(right_csv_path, index=False)
