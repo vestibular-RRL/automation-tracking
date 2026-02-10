@@ -157,20 +157,35 @@ def crop_video_to_file(input_path: str,
 # YOLO iris detection helpers
 # ─────────────────────────────────────────────────────────
 
-def detect_iris(frame: np.ndarray, model, device: str, conf_threshold: float = 0.5):
-    """Run YOLO prediction on *frame* and return (cx, cy, size, bbox).
-
-    Returns (-1, -1, -1.0, None) when no detection is found.
-    """
-    results = model.predict(frame, verbose=False, conf=conf_threshold, device=device)[0]
-    if len(results.boxes) == 0:
+def _parse_iris_result(result) -> Tuple[int, int, float, Optional[Tuple[int, int, int, int]]]:
+    """Parse a single YOLO result into (cx, cy, size, bbox). Returns (-1, -1, -1.0, None) if no detection."""
+    if len(result.boxes) == 0:
         return -1, -1, -1.0, None
-    boxes = results.boxes.xyxy.cpu().numpy()
+    boxes = result.boxes.xyxy.cpu().numpy()
     x1, y1, x2, y2 = map(int, max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])))
     cx = (x1 + x2) // 2
     cy = (y1 + y2) // 2
     size = round(((x2 - x1) + (y2 - y1)) / 2, 2)
     return cx, cy, size, (x1, y1, x2, y2)
+
+
+def detect_iris(frame: np.ndarray, model, device: str, conf_threshold: float = 0.5):
+    """Run YOLO prediction on *frame* and return (cx, cy, size, bbox).
+
+    Returns (-1, -1, -1.0, None) when no detection is found.
+    """
+    use_half = device == "cuda"
+    results = model.predict(frame, verbose=False, conf=conf_threshold, device=device, half=use_half)[0]
+    return _parse_iris_result(results)
+
+
+def detect_iris_batch(frames: list, model, device: str, conf_threshold: float = 0.5):
+    """Run YOLO on a batch of images in one GPU call. Returns list of (cx, cy, size, bbox) per frame."""
+    if not frames:
+        return []
+    use_half = device == "cuda"
+    results_list = model.predict(frames, verbose=False, conf=conf_threshold, device=device, half=use_half)
+    return [_parse_iris_result(r) for r in results_list]
 
 
 # ─────────────────────────────────────────────────────────
@@ -204,30 +219,31 @@ def track_irises_from_frames(cropped_frames, model, device: str, fps: float = 30
     prev_rx, prev_ry = None, None
     printed_info = False
     results_rows: list[dict] = []
+    log_every_n_frames = 500
 
     for frame in cropped_frames:
         if not printed_info:
             print(f"  [track] frame size: {frame.shape[1]}x{frame.shape[0]}, fps={fps}")
             printed_info = True
+        if frame_idx > 0 and frame_idx % log_every_n_frames == 0:
+            print(f"  [track] processed {frame_idx} frames …")
 
         width = frame.shape[1]
         left_half = frame[:, :width // 2]
         right_half = frame[:, width // 2:]
 
-        # --- Left eye ---
-        lx, ly, lsize, lbox = detect_iris(left_half, model, device)
+        # Batch left + right in one GPU call (faster than two separate inferences)
+        (lx, ly, lsize, lbox), (rx, ry, rsize, rbox) = detect_iris_batch(
+            [left_half, right_half], model, device, conf_threshold=0.5
+        )
         if prev_lx is not None and lx != -1 and ly != -1:
             lvel = round(((lx - prev_lx) ** 2 + (ly - prev_ly) ** 2) ** 0.5 * fps, 2)
         else:
             lvel = 0.0
-
-        # --- Right eye ---
-        rx, ry, rsize, rbox = detect_iris(right_half, model, device)
         if prev_rx is not None and rx != -1 and ry != -1:
             rvel = round(((rx - prev_rx) ** 2 + (ry - prev_ry) ** 2) ** 0.5 * fps, 2)
         else:
             rvel = 0.0
-
         prev_lx, prev_ly = lx, ly
         prev_rx, prev_ry = rx, ry
 
@@ -244,6 +260,8 @@ def track_irises_from_frames(cropped_frames, model, device: str, fps: float = 30
         })
         frame_idx += 1
 
+    if results_rows:
+        print(f"  [track] done — {len(results_rows)} frames.")
     return results_rows
 
 
@@ -308,6 +326,7 @@ def process_video(video_path: str,
     """
     os.makedirs(output_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"  [pipeline] Device: {device}")
     base_name = os.path.splitext(os.path.basename(video_path))[0]
 
     # --- Crop frames in memory ---
@@ -315,8 +334,14 @@ def process_video(video_path: str,
     cropped_frames = crop_frames_in_memory(video_path)
 
     # --- Load YOLO model ---
-    print(f"  [pipeline] Loading model: {model_path}")
+    print(f"  [pipeline] Loading model: {model_path} …")
     model = YOLO(model_path)
+    print(f"  [pipeline] Model loaded.")
+    if device == "cuda":
+        print(f"  [pipeline] Warming up GPU (one-time) …")
+        dummy = np.zeros((FIXED_ROI_H // 2, FIXED_ROI_W // 2, 3), dtype=np.uint8)
+        detect_iris_batch([dummy, dummy], model, device)
+        print(f"  [pipeline] GPU warmup done.")
 
     # --- Read annotation CSV (optional) ---
     start_frame = 0
@@ -331,7 +356,7 @@ def process_video(video_path: str,
 
     # --- Track irises ---
     fps = get_video_fps(video_path)
-    print(f"  [pipeline] Tracking left/right irises …")
+    print(f"  [pipeline] Starting iris tracking …")
     results_list = track_irises_from_frames(
         cropped_frames=cropped_frames,
         model=model,
@@ -386,8 +411,7 @@ def process_video(video_path: str,
 
         df_left.to_csv(left_csv_path, index=False)
         df_right.to_csv(right_csv_path, index=False)
-        print(f"  [pipeline] Wrote {left_csv_path}")
-        print(f"  [pipeline] Wrote {right_csv_path}")
+        print(f"  [pipeline] Wrote CSVs: {left_csv_path}, {right_csv_path}")
     else:
         print("  [pipeline] Warning: no tracking results produced.")
 

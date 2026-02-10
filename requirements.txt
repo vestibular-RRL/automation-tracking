@@ -28,9 +28,15 @@ requests==2.32.3
 scipy==1.15.3
 six==1.17.0
 sympy==1.13.1
+# PyTorch: install ONE of the following (not both).
+# CPU (default): pip install -r requirements.txt will install these:
 torch==2.5.1
 torchaudio==2.5.1
 torchvision==0.20.1
+# GPU (Nvidia CUDA): uninstall the CPU build first, then install from CUDA index:
+#   pip uninstall -y torch torchvision torchaudio
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# (Use cu118 for CUDA 11.8, cu124 for CUDA 12.4 — match your nvidia-smi CUDA version.)
 tqdm==4.67.1
 typing_extensions==4.12.2
 tzdata==2025.2
