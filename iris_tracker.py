@@ -351,13 +351,19 @@ def process_video(video_path: str,
         df_left = df_all[left_cols].rename(columns={"left_x": "x", "left_y": "y", "left_velocity": "velocity"})
         df_right = df_all[right_cols].rename(columns={"right_x": "x", "right_y": "y", "right_velocity": "velocity"})
 
-        # Merge with annotations if available
+        # Merge with annotations so every row has an annotation label (tracking rows preserved)
         if annotations_df is not None and "Frame#" in annotations_df.columns:
             ann_cols = ["Frame#"]
             if "Annotation" in annotations_df.columns:
                 ann_cols.append("Annotation")
-            df_left = pd.merge(annotations_df[ann_cols], df_left, on="Frame#", how="left")
-            df_right = pd.merge(annotations_df[ann_cols], df_right, on="Frame#", how="left")
+            # Keep all tracking rows; attach annotation per frame (left merge from tracking)
+            df_left = pd.merge(df_left, annotations_df[ann_cols], on="Frame#", how="left")
+            df_right = pd.merge(df_right, annotations_df[ann_cols], on="Frame#", how="left")
+        # Ensure Annotation column exists in every output (empty when no annotations)
+        if "Annotation" not in df_left.columns:
+            df_left.insert(1, "Annotation", "")
+        if "Annotation" not in df_right.columns:
+            df_right.insert(1, "Annotation", "")
 
         df_left.to_csv(left_csv_path, index=False)
         df_right.to_csv(right_csv_path, index=False)
@@ -377,17 +383,25 @@ def process_video(video_path: str,
 # ─────────────────────────────────────────────────────────
 
 def find_videos(folder: str) -> list[str]:
-    """Return sorted list of .mp4 filenames in *folder*, excluding intermediates."""
+    """Return sorted list of full paths to .mp4 files. Layout: data/subject01/video.mp4 (data then subject subdirs)."""
     if not os.path.isdir(folder):
         return []
-    return [
-        name for name in sorted(os.listdir(folder))
-        if name.lower().endswith(".mp4")
-        and "_cropped" not in name
-        and "_combined_traced" not in name
-        and "_left" not in name
-        and "_right" not in name
-    ]
+    search_base = os.path.join(folder, "data")
+    if not os.path.isdir(search_base):
+        search_base = folder
+    paths = []
+    for subdir_name in sorted(os.listdir(search_base)):
+        subdir = os.path.join(search_base, subdir_name)
+        if not os.path.isdir(subdir):
+            continue
+        for name in sorted(os.listdir(subdir)):
+            if (name.lower().endswith(".mp4")
+                    and "_cropped" not in name
+                    and "_combined_traced" not in name
+                    and "_left" not in name
+                    and "_right" not in name):
+                paths.append(os.path.join(subdir, name))
+    return paths
 
 
 def process_folder(folder: str, model_path: str, output_dir: str = ".",
@@ -398,18 +412,19 @@ def process_folder(folder: str, model_path: str, output_dir: str = ".",
         return 0
 
     os.makedirs(output_dir, exist_ok=True)
-    mp4s = find_videos(folder)
-    if not mp4s:
-        print(f"No .mp4 files found in: {folder}")
+    video_paths = find_videos(folder)
+    if not video_paths:
+        print(f"No .mp4 files found in: {folder} (layout: data/<subject>/video.mp4)")
         return 0
 
     processed = 0
-    for name in mp4s:
-        video_path = os.path.join(folder, name)
+    for video_path in video_paths:
+        name = os.path.basename(video_path)
         base_name = os.path.splitext(name)[0]
+        video_dir = os.path.dirname(video_path)
 
-        # Prefer a per-video annotation CSV next to the video, fall back to global --csv
-        per_video_csv = os.path.join(folder, f"{base_name}.csv")
+        # Annotation CSV next to the video (same folder), fall back to global --csv
+        per_video_csv = os.path.join(video_dir, f"{base_name}.csv")
         annotation_csv = per_video_csv if os.path.exists(per_video_csv) else fallback_csv
 
         try:
